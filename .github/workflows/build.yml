@@ -190,6 +190,8 @@ jobs:
 
             sed -i "s/android:label=\"[^\"]*\"/android:label=\"${XML_APP_NAME}\"/" android/app/src/main/AndroidManifest.xml
 
+            python3 -c "p='android/app/src/main/AndroidManifest.xml'; c=open(p).read(); c=c if 'android.permission.INTERNET' in c else c.replace('<application', '<uses-permission android:name=\"android.permission.INTERNET\"/>\n    <application', 1); c=c if 'usesCleartextTraffic' in c else c.replace('<application', '<application android:usesCleartextTraffic=\"true\"', 1); open(p,'w').write(c)"
+
             echo "type=flutter" >> "$GITHUB_OUTPUT"
             echo "dir=project_raw/$SAFE_NAME" >> "$GITHUB_OUTPUT"
             echo "✅ Web2APK project di-generate -> project_raw/$SAFE_NAME"
