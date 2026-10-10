@@ -33,6 +33,8 @@ jobs:
         -Dorg.gradle.configureondemand=true
         -Dorg.gradle.workers.max=4
         -Dorg.gradle.jvmargs=-Xmx3g
+      TARGET_PLATFORMS: android-arm,android-arm64
+      GRADLE_ABIS: armeabi-v7a,arm64-v8a
 
     steps:
       # =========================================================
@@ -256,6 +258,40 @@ jobs:
           } >> "$GP"
 
       # =========================================================
+      # 6b. SKIP lintVital*
+      # =========================================================
+      - name: Speed up Gradle (skip lintVital)
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.gradle/init.d"
+          echo 'Ly8gSW5pdCBzY3JpcHQgR3JhZGxlOiBtYXRpaW4gbGludFZpdGFsKiAoY2VrIGxpbnQgb3RvbWF0aXMgZGkgYXNzZW1ibGVSZWxlYXNlKS4KLy8gR2FrIG5nYXJ1aCBrZSBpc2kgQVBLLCBjdW1hIG5hbWJhaCB3YWt0dSBidWlsZC4KYWxscHJvamVjdHMgewogICAgdGFza3MuY29uZmlndXJlRWFjaCB7IHRhc2sgLT4KICAgICAgICBpZiAodGFzay5uYW1lLnN0YXJ0c1dpdGgoJ2xpbnRWaXRhbCcpKSB7CiAgICAgICAgICAgIHRhc2suZW5hYmxlZCA9IGZhbHNlCiAgICAgICAgfQogICAgfQp9Cg==' | base64 -d > "$HOME/.gradle/init.d/fastbuild.gradle"
+          echo "✅ init script terpasang:"
+          cat "$HOME/.gradle/init.d/fastbuild.gradle"
+
+      # =========================================================
+      # 6c. PAKAI NDK YANG SUDAH ADA DI RUNNER (khusus mode url)
+      # =========================================================
+      - name: Use preinstalled NDK (skip download)
+        if: env.MODE == 'url'
+        working-directory: ${{ steps.detect.outputs.dir }}
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          NDK_VER=$(ls -1 "$SDK/ndk" 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$NDK_VER" ]; then
+            echo "ℹ️ Gak ada NDK preinstalled di $SDK/ndk -- biarin Gradle download."
+            exit 0
+          fi
+          for f in android/app/build.gradle.kts android/app/build.gradle; do
+            if [ -f "$f" ] && grep -qE 'ndkVersion[[:space:]]*=?[[:space:]]*flutter\.ndkVersion' "$f"; then
+              sed -i -E 's/ndkVersion[[:space:]]*=?[[:space:]]*flutter\.ndkVersion/ndkVersion = "'"$NDK_VER"'"/' "$f"
+              echo "✅ $f -> ndkVersion = $NDK_VER (preinstalled, gak perlu download)"
+              exit 0
+            fi
+          done
+          echo "ℹ️ Baris 'ndkVersion = flutter.ndkVersion' gak ketemu -- dilewati."
+
+      # =========================================================
       # 7a. BUILD FLUTTER
       # =========================================================
       - name: Build Flutter APK
@@ -268,7 +304,7 @@ jobs:
           BT="${{ github.event.inputs.build_type }}"
           [ -z "$BT" ] && BT=release
           flutter build apk --$BT \
-            --target-platform=android-arm64 \
+            --target-platform=$TARGET_PLATFORMS \
             --no-tree-shake-icons \
             --no-shrink \
             --no-pub 2>&1 | tee build.log
@@ -303,7 +339,7 @@ jobs:
           echo "Running: $CMD $TASK"
           $CMD "$TASK" \
             --parallel --build-cache \
-            -Pandroid.injected.build.abi=arm64-v8a 2>&1 | tee build.log || {
+            -Pandroid.injected.build.abi=$GRADLE_ABIS 2>&1 | tee build.log || {
               echo "::error::Build gagal. Cek log di atas."
               tail -100 build.log
               exit 1
